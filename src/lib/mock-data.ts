@@ -1,0 +1,93 @@
+import { Organization, Contact, User } from '../types';
+
+export const mockOrganizations: Organization[] = [
+  {
+    id: '1',
+    name: 'Swiss Post',
+    website: 'https://post.ch',
+    websiteStatus: 'working',
+    linkedinUrl: 'https://linkedin.com/company/swiss-post',
+    countryRegion: 'Switzerland',
+    email: 'contact@post.ch',
+    category: 'warehousing-intralogistics-robotics',
+    status: 'active',
+    notes: 'Major logistics partner',
+    createdAt: '2024-01-15T10:00:00Z',
+    updatedAt: '2024-01-15T10:00:00Z',
+  },
+  {
+    id: '2',
+    name: 'Gilgen Logistics',
+    website: 'https://gilgen.com',
+    websiteStatus: 'working',
+    linkedinUrl: 'https://linkedin.com/company/gilgen-logistics',
+    countryRegion: 'Switzerland',
+    email: 'info@gilgen.com',
+    category: 'mobility-fleet-management',
+    status: 'active',
+    notes: 'Fleet management solutions provider',
+    createdAt: '2024-01-20T10:00:00Z',
+    updatedAt: '2024-01-20T10:00:00Z',
+  },
+  {
+    id: '3',
+    name: 'LogiTech Innovations',
+    website: 'https://logitech-innovations.ch',
+    websiteStatus: 'not-working',
+    linkedinUrl: '',
+    countryRegion: 'Switzerland',
+    email: 'hello@logitech-innovations.ch',
+    category: 'additive-manufacturing',
+    status: 'active',
+    notes: '3D printing and manufacturing',
+    createdAt: '2024-02-01T10:00:00Z',
+    updatedAt: '2024-02-01T10:00:00Z',
+  },
+];
+
+export const mockContacts: Contact[] = [
+  {
+    id: '1',
+    organizationId: '1',
+    name: 'Hans Müller',
+    rolePosition: 'Head of Logistics',
+    email: 'hans.mueller@post.ch',
+    preferredLanguage: 'DE',
+    notes: 'Key contact for partnership initiatives',
+    createdAt: '2024-01-15T10:00:00Z',
+    updatedAt: '2024-01-15T10:00:00Z',
+  },
+  {
+    id: '2',
+    organizationId: '2',
+    name: 'Sophie Laurent',
+    rolePosition: 'CEO',
+    email: 'sophie.laurent@gilgen.com',
+    preferredLanguage: 'FR',
+    notes: 'Interested in supply chain tech solutions',
+    createdAt: '2024-01-20T10:00:00Z',
+    updatedAt: '2024-01-20T10:00:00Z',
+  },
+  {
+    id: '3',
+    organizationId: '3',
+    name: 'John Smith',
+    rolePosition: 'Founder & CTO',
+    email: 'john@logitech-innovations.ch',
+    preferredLanguage: 'EN',
+    notes: 'Developing AI-powered logistics platform',
+    createdAt: '2024-02-01T10:00:00Z',
+    updatedAt: '2024-02-01T10:00:00Z',
+  },
+];
+
+export const mockUsers: User[] = [
+  {
+    id: '1',
+    email: 'admin@supplychaintech.ch',
+    name: 'Admin User',
+    role: 'admin',
+    hasAccess: true,
+    createdAt: '2024-01-01T10:00:00Z',
+  },
+];
