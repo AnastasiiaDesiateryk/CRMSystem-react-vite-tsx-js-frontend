@@ -12,6 +12,7 @@ export interface Organization {
   customFields?: Record<string, any>;
   createdAt: string;
   updatedAt: string;
+  etag?: string;
 }
 
 export interface Contact {
@@ -31,9 +32,10 @@ export interface User {
   id: string;
   email: string;
   name: string;
-  role: 'admin' | 'user';
   hasAccess: boolean;
-  createdAt: string;
+  roles: string[];
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface CustomField {

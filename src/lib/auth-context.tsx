@@ -1,5 +1,35 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
+import * as authApi from './auth-api';
+
+/**
+ * AuthContext — application-level session boundary.
+ *
+ * Architectural role:
+ * - Owns authentication state.
+ * - Owns session lifecycle.
+ * - Coordinates with Auth API adapter.
+ *
+ * Clean Architecture mapping:
+ *
+ * UI Components
+ *      ↓
+ * AuthContext (application layer)
+ *      ↓
+ * Auth API (infrastructure adapter)
+ *      ↓
+ * Backend
+ *
+ * UI does NOT:
+ * - call /api directly
+ * - store raw tokens outside context
+ * - interpret JWT
+ *
+ * Context is the single source of truth for:
+ * - user identity
+ * - authentication state
+ * - RBAC-derived flags (isAdmin)
+ */
 
 interface AuthContextType {
   user: User | null;
@@ -7,80 +37,77 @@ interface AuthContextType {
   register: (email: string, password: string, name: string) => Promise<boolean>;
   logout: () => void;
   isAuthenticated: boolean;
+  isAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+const TOKEN_KEY = 'access_token';
+const USER_KEY = 'currentUser';
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+   /**
+   * Session recovery.
+   * - This does NOT validate token freshness.
+   * - Real validation happens server-side.
+   */
 
   useEffect(() => {
-    // Initialize default admin user
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    if (users.length === 0) {
-      const defaultAdmin = {
-        id: 'admin-default',
-        email: 'admin',
-        password: 'admin',
-        name: 'Administrator',
-        role: 'admin' as const,
-        hasAccess: true,
-        createdAt: new Date().toISOString(),
-      };
-      localStorage.setItem('users', JSON.stringify([defaultAdmin]));
-    }
+    const savedUser = localStorage.getItem(USER_KEY);
+    const token = localStorage.getItem(TOKEN_KEY);
 
-    const savedUser = localStorage.getItem('currentUser');
-    if (savedUser) {
+    if (savedUser && token) {
       setUser(JSON.parse(savedUser));
+    } else {
+      localStorage.removeItem(USER_KEY);
+      localStorage.removeItem(TOKEN_KEY);
+      setUser(null);
     }
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    // Mock login - in production, this would call Supabase
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    const foundUser = users.find(
-      (u: any) => u.email === email && u.password === password
-    );
+      try {
+        const res = await authApi.login(email, password);
+        localStorage.setItem(TOKEN_KEY, res.accessToken);
+        
+        const user = await authApi.me();
+        localStorage.setItem(USER_KEY, JSON.stringify(user));
+        setUser(user);
 
-    if (foundUser) {
-      const userWithoutPassword = { ...foundUser };
-      delete userWithoutPassword.password;
-      setUser(userWithoutPassword);
-      localStorage.setItem('currentUser', JSON.stringify(userWithoutPassword));
-      return true;
-    }
-    return false;
-  };
-
-  const register = async (email: string, password: string, name: string): Promise<boolean> => {
-    // Mock registration - in production, this would call Supabase
-    const users = JSON.parse(localStorage.getItem('users') || '[]');
-    
-    if (users.some((u: any) => u.email === email)) {
-      return false;
-    }
-
-    const newUser = {
-      id: Date.now().toString(),
-      email,
-      password,
-      name,
-      role: 'user' as const,
-      hasAccess: false,
-      createdAt: new Date().toISOString(),
+        return true;
+      } catch {
+        localStorage.removeItem(TOKEN_KEY);
+        localStorage.removeItem(USER_KEY);
+        setUser(null);
+        return false;
+      }
     };
 
-    users.push(newUser);
-    localStorage.setItem('users', JSON.stringify(users));
+ const register = async (email: string, password: string, name: string): Promise<boolean> => {
+  try {
+    const res = await authApi.register(email, password, name);
+    localStorage.setItem(TOKEN_KEY, res.accessToken);
+
+    const me = await authApi.me();
+    localStorage.setItem(USER_KEY, JSON.stringify(me));
+    setUser(me);
+
     return true;
-  };
+  } catch {
+    return false;
+  }
+};
+
 
   const logout = () => {
     setUser(null);
-    localStorage.removeItem('currentUser');
+    localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(TOKEN_KEY);
   };
 
+  const isAdmin = !!user?.roles?.includes("ROLE_ADMIN");
+ 
   return (
     <AuthContext.Provider
       value={{
@@ -89,6 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         register,
         logout,
         isAuthenticated: !!user,
+        isAdmin,
       }}
     >
       {children}

@@ -1,19 +1,23 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Organization, Contact, CustomField } from '../types';
-import { mockOrganizations, mockContacts } from './mock-data';
+import * as orgApi from './organizations-api';
 
 interface DataContextType {
   organizations: Organization[];
   contacts: Contact[];
   customFields: CustomField[];
-  addOrganization: (org: Omit<Organization, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  updateOrganization: (id: string, org: Partial<Organization>) => void;
-  deleteOrganization: (id: string) => void;
+
+  addOrganization: (org: Omit<Organization, 'id' | 'createdAt' | 'updatedAt'| 'etag'>) => Promise<void>;
+  updateOrganization: (id: string, org: Partial<Organization>) => Promise<void>;
+  deleteOrganization: (id: string) => Promise<void>;
+
   addContact: (contact: Omit<Contact, 'id' | 'createdAt' | 'updatedAt'>) => void;
   updateContact: (id: string, contact: Partial<Contact>) => void;
   deleteContact: (id: string) => void;
+
   addCustomField: (field: Omit<CustomField, 'id'>) => void;
   deleteCustomField: (id: string) => void;
+
   importData: (orgs: Organization[], conts: Contact[]) => void;
 }
 
@@ -25,58 +29,40 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
 
   useEffect(() => {
-    const savedOrgs = localStorage.getItem('organizations');
-    const savedContacts = localStorage.getItem('contacts');
-    const savedFields = localStorage.getItem('customFields');
-
-    if (savedOrgs) {
-      setOrganizations(JSON.parse(savedOrgs));
-    } else {
-      setOrganizations(mockOrganizations);
-      localStorage.setItem('organizations', JSON.stringify(mockOrganizations));
-    }
-
-    if (savedContacts) {
-      setContacts(JSON.parse(savedContacts));
-    } else {
-      setContacts(mockContacts);
-      localStorage.setItem('contacts', JSON.stringify(mockContacts));
-    }
-
-    if (savedFields) {
-      setCustomFields(JSON.parse(savedFields));
-    }
+    (async () => {
+      try {
+        const orgs = await orgApi.listOrganizations();
+        setOrganizations(orgs);
+      } catch (e) {
+        setOrganizations([]);
+      }
+    })();
   }, []);
 
-  const addOrganization = (org: Omit<Organization, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newOrg: Organization = {
-      ...org,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    const updated = [...organizations, newOrg];
-    setOrganizations(updated);
-    localStorage.setItem('organizations', JSON.stringify(updated));
+
+  const addOrganization: DataContextType['addOrganization'] = async (org) => {
+    const created = await orgApi.createOrganization(org);
+    setOrganizations((prev) => [...prev, created]);
   };
 
-  const updateOrganization = (id: string, org: Partial<Organization>) => {
-    const updated = organizations.map((o) =>
-      o.id === id ? { ...o, ...org, updatedAt: new Date().toISOString() } : o
-    );
-    setOrganizations(updated);
-    localStorage.setItem('organizations', JSON.stringify(updated));
+  const updateOrganization: DataContextType['updateOrganization'] = async (id, org) => {
+    const current = organizations.find((o) => o.id === id);
+    if (!current?.etag) throw new Error('Missing etag for organization');
+
+    const updated = await orgApi.patchOrganization(id, org, current.etag);
+    setOrganizations((prev) => prev.map((o) => (o.id === id ? updated : o)));
   };
 
-  const deleteOrganization = (id: string) => {
-    const updated = organizations.filter((o) => o.id !== id);
-    const updatedContacts = contacts.filter((c) => c.organizationId !== id);
-    setOrganizations(updated);
-    setContacts(updatedContacts);
-    localStorage.setItem('organizations', JSON.stringify(updated));
-    localStorage.setItem('contacts', JSON.stringify(updatedContacts));
-  };
+  const deleteOrganization: DataContextType['deleteOrganization'] = async (id) => {
+    const current = organizations.find((o) => o.id === id);
+    if (!current?.etag) throw new Error('Missing etag for organization');
 
+    await orgApi.deleteOrganization(id, current.etag);
+
+    setOrganizations((prev) => prev.filter((o) => o.id !== id));
+    setContacts((prev) => prev.filter((c) => c.organizationId !== id));
+  };
+  // contacts/customFields still local
   const addContact = (contact: Omit<Contact, 'id' | 'createdAt' | 'updatedAt'>) => {
     const newContact: Contact = {
       ...contact,
@@ -108,22 +94,16 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       ...field,
       id: Date.now().toString(),
     };
-    const updated = [...customFields, newField];
-    setCustomFields(updated);
-    localStorage.setItem('customFields', JSON.stringify(updated));
+     setCustomFields((prev) => [...prev, newField]);
   };
 
   const deleteCustomField = (id: string) => {
-    const updated = customFields.filter((f) => f.id !== id);
-    setCustomFields(updated);
-    localStorage.setItem('customFields', JSON.stringify(updated));
+    setCustomFields((prev) => prev.filter((f) => f.id !== id));
   };
 
   const importData = (orgs: Organization[], conts: Contact[]) => {
     setOrganizations(orgs);
     setContacts(conts);
-    localStorage.setItem('organizations', JSON.stringify(orgs));
-    localStorage.setItem('contacts', JSON.stringify(conts));
   };
 
   return (

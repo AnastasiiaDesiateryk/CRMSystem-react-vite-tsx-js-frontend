@@ -10,14 +10,14 @@ import { Layout } from './components/Layout';
 import { Toaster } from './components/ui/sonner';
 
 function AppContent() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isAdmin } = useAuth();
   const [currentPage, setCurrentPage] = useState('organizations');
 
   if (!isAuthenticated) {
     return <LoginPage />;
   }
 
-  if (!user?.hasAccess && user?.role !== 'admin') {
+  if (!user?.hasAccess && !isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">

@@ -11,7 +11,7 @@ interface LayoutProps {
 }
 
 export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
-  const { user, logout } = useAuth();
+  const { user, logout, isAdmin } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const navigation = [
@@ -20,7 +20,7 @@ export function Layout({ children, currentPage, onNavigate }: LayoutProps) {
     { id: 'about', label: 'About', icon: Info },
   ];
 
-  if (user?.role === 'admin') {
+  if (isAdmin) {
     navigation.unshift({ id: 'admin', label: 'Admin Panel', icon: Users });
   }
 
