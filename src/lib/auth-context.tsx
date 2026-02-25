@@ -47,6 +47,11 @@ const USER_KEY = 'currentUser';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const clearSession = () => {
+  localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(TOKEN_KEY);
+  setUser(null);
+};
    /**
    * Session recovery.
    * - This does NOT validate token freshness.
@@ -65,6 +70,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null);
     }
   }, []);
+
+  // global logout event (from axios interceptor)
+useEffect(() => {
+  const onLogout = () => clearSession();
+
+  window.addEventListener("auth:logout", onLogout);
+  return () => {
+    window.removeEventListener("auth:logout", onLogout);
+  };
+}, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
       try {
@@ -100,11 +115,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 };
 
 
-  const logout = () => {
-    setUser(null);
-    localStorage.removeItem(USER_KEY);
-    localStorage.removeItem(TOKEN_KEY);
-  };
+  const logout = () => clearSession();
 
   const isAdmin = !!user?.roles?.includes("ROLE_ADMIN");
  

@@ -2,8 +2,8 @@ import { api } from './api';
 import { Organization } from '../types';
 
 export async function listOrganizations(): Promise<Organization[]> {
-  const res = await api.get<Organization[]>('/api/organizations');
-  return res.data;
+  const res = await api.get('/api/organizations');
+  return res.data.items ?? [];
 }
 
 export async function createOrganization(

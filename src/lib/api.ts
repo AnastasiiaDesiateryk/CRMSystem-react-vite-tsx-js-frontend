@@ -37,3 +37,27 @@ api.interceptors.request.use((config) => {
   }
   return config;
 });
+
+api.interceptors.response.use(
+  (res) => res,
+  (err) => {
+    const status = err?.response?.status;
+    if (status === 401 || status === 403) {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("currentUser");
+      window.dispatchEvent(new Event("auth:logout"));
+    }
+    return Promise.reject(err);
+  }
+);
+
+export function toApiMessage(err: unknown): string {
+  const e = err as any;
+  const status = e?.response?.status;
+  const code = e?.response?.data?.code;
+  const msg = e?.response?.data?.message;
+
+  if (status === 412) return "Conflict: data was changed by someone else. Refresh and try again.";
+  if (status === 401 || status === 403) return "Session expired. Please log in again.";
+  return msg || code || "Unexpected error";
+}
