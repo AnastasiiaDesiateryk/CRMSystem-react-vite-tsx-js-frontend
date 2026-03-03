@@ -14,11 +14,17 @@ function AppContent() {
   const [currentPage, setCurrentPage] = useState('organizations');
 
   if (!isAuthenticated) {
-    return <LoginPage />;
+    return (
+      <>
+        <LoginPage />
+        <Toaster />
+      </>
+    );
   }
 
   if (!user?.hasAccess && !isAdmin) {
     return (
+    <>
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
         <div className="text-center">
           <h1 className="mb-4">Access Pending</h1>
@@ -27,26 +33,28 @@ function AppContent() {
           </p>
         </div>
       </div>
+      <Toaster />
+      </>
     );
   }
 
   return (
+    <DataProvider>
     <Layout currentPage={currentPage} onNavigate={setCurrentPage}>
       {currentPage === 'admin' && <AdminPanel />}
       {currentPage === 'organizations' && <OrganizationsPage />}
       {currentPage === 'import-export' && <ImportExportPage />}
       {currentPage === 'about' && <AboutPage />}
     </Layout>
+    <Toaster />
+    </DataProvider>
   );
 }
 
 export default function App() {
   return (
     <AuthProvider>
-      <DataProvider>
-        <AppContent />
-        <Toaster />
-      </DataProvider>
+      <AppContent />
     </AuthProvider>
   );
 }

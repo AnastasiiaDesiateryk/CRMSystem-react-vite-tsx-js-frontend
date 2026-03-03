@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, authIfMatchHeaders } from './api';
 import { Organization } from '../types';
 
 export async function listOrganizations(): Promise<Organization[]> {
@@ -13,15 +13,19 @@ export async function createOrganization(
   return res.data;
 }
 
-export async function patchOrganization(id: string, patch: Partial<Organization>, etag: string) {
+export async function patchOrganization(
+  id: string,
+  patch: Partial<Organization>,
+  etag: string
+): Promise<Organization> {
   const res = await api.patch<Organization>(`/api/organizations/${id}`, patch, {
-    headers: { 'If-Match': etag },
+    headers: authIfMatchHeaders(etag),
   });
   return res.data;
 }
 
 export async function deleteOrganization(id: string, etag: string): Promise<void> {
-  await api.delete(`/api/organizations/${id}`, {
-    headers: { 'If-Match': etag },
+    await api.delete(`/api/organizations/${id}`, {
+    headers: authIfMatchHeaders(etag),
   });
 }

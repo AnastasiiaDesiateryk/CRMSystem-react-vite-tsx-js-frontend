@@ -1,5 +1,5 @@
 // src/lib/api.ts
-import axios from 'axios';
+import axios, { AxiosHeaders } from "axios";
 
 /**
  * NOTE:
@@ -31,10 +31,12 @@ export const api = axios.create({
  */
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('access_token');
-  if (token) {
-    config.headers = config.headers ?? {};
-    config.headers.Authorization = `Bearer ${token}`;
-  }
+  if (!token) return config;
+
+  const headers = AxiosHeaders.from(config.headers);
+  headers.set("Authorization", `Bearer ${token}`);
+  config.headers = headers;
+
   return config;
 });
 
@@ -42,7 +44,7 @@ api.interceptors.response.use(
   (res) => res,
   (err) => {
     const status = err?.response?.status;
-    if (status === 401 || status === 403) {
+    if (status === 401) {
       localStorage.removeItem("access_token");
       localStorage.removeItem("currentUser");
       window.dispatchEvent(new Event("auth:logout"));
@@ -58,6 +60,17 @@ export function toApiMessage(err: unknown): string {
   const msg = e?.response?.data?.message;
 
   if (status === 412) return "Conflict: data was changed by someone else. Refresh and try again.";
-  if (status === 401 || status === 403) return "Session expired. Please log in again.";
+  if (status === 401) return "Session expired. Please log in again.";
+  if (status === 403) return "Access denied.";
   return msg || code || "Unexpected error";
+}
+
+export function authIfMatchHeaders(etag: string): AxiosHeaders {
+  const token = localStorage.getItem("access_token");
+  if (!token) throw new Error("missing access_token");
+
+  const h = new AxiosHeaders();
+  h.set("Authorization", `Bearer ${token}`);
+  h.set("If-Match", etag);
+  return h;
 }

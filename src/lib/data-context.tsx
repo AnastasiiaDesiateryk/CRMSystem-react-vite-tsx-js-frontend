@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Organization, Contact, CustomField } from '../types';
 import * as orgApi from './organizations-api';
+import { useAuth } from './auth-context';
 
 interface DataContextType {
   organizations: Organization[];
@@ -29,15 +30,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
 
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       try {
         const orgs = await orgApi.listOrganizations();
-        setOrganizations(orgs);
-      } catch (e) {
-        setOrganizations([]);
+        if (!cancelled) setOrganizations(orgs);
+      } catch {
+        if (!cancelled) setOrganizations([]);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
 
 
   const addOrganization: DataContextType['addOrganization'] = async (org) => {
