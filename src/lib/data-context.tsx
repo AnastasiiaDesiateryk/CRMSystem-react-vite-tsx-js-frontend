@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { Organization, Contact, CustomField } from '../types';
 import * as orgApi from './organizations-api';
-import { useAuth } from './auth-context';
+import * as contactApi from './contacts-api';
 
 interface DataContextType {
   organizations: Organization[];
@@ -12,9 +12,9 @@ interface DataContextType {
   updateOrganization: (id: string, org: Partial<Organization>) => Promise<void>;
   deleteOrganization: (id: string) => Promise<void>;
 
-  addContact: (contact: Omit<Contact, 'id' | 'createdAt' | 'updatedAt'>) => void;
-  updateContact: (id: string, contact: Partial<Contact>) => void;
-  deleteContact: (id: string) => void;
+  addContact: (contact: Omit<Contact, 'id' | 'createdAt' | 'updatedAt'| 'etag'>) => Promise<void>;
+  updateContact: (id: string, contact: Partial<Contact>) => Promise<void>;
+  deleteContact: (id: string) => Promise<void>;
 
   addCustomField: (field: Omit<CustomField, 'id'>) => void;
   deleteCustomField: (id: string) => void;
@@ -35,16 +35,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     (async () => {
       try {
         const orgs = await orgApi.listOrganizations();
-        if (!cancelled) setOrganizations(orgs);
-      } catch {
-        if (!cancelled) setOrganizations([]);
-      }
-    })();
+       if (cancelled) return;
 
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+      setOrganizations(orgs);
+
+      const contactLists = await Promise.all(
+        orgs.map(async (org) => {
+          try {
+            return await contactApi.listContactsByOrganization(org.id);
+          } catch {
+            return [];
+          }
+        })
+      );
+
+      if (!cancelled) {
+        setContacts(contactLists.flat());
+      }
+    } catch {
+      if (!cancelled) {
+        setOrganizations([]);
+        setContacts([]);
+      }
+    }
+  })();
+
+  return () => {
+    cancelled = true;
+  };
+}, []);
 
 
 
@@ -70,32 +89,49 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     setOrganizations((prev) => prev.filter((o) => o.id !== id));
     setContacts((prev) => prev.filter((c) => c.organizationId !== id));
   };
-  // contacts/customFields still local
-  const addContact = (contact: Omit<Contact, 'id' | 'createdAt' | 'updatedAt'>) => {
-    const newContact: Contact = {
-      ...contact,
-      id: Date.now().toString(),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    const updated = [...contacts, newContact];
-    setContacts(updated);
-    localStorage.setItem('contacts', JSON.stringify(updated));
-  };
+  // contacts/customFields 
+ const addContact: DataContextType['addContact'] = async (contact) => {
+  const created = await contactApi.createContact(contact.organizationId, contact);
+  setContacts((prev) => [...prev, created]);
+};
 
-  const updateContact = (id: string, contact: Partial<Contact>) => {
-    const updated = contacts.map((c) =>
-      c.id === id ? { ...c, ...contact, updatedAt: new Date().toISOString() } : c
-    );
-    setContacts(updated);
-    localStorage.setItem('contacts', JSON.stringify(updated));
-  };
+const updateContact: DataContextType['updateContact'] = async (id, patch) => {
+  const current = contacts.find((c) => c.id === id);
+  if (!current) throw new Error('Contact not found');
+  if (!current.organizationId) throw new Error('Missing organizationId for contact');
 
-  const deleteContact = (id: string) => {
-    const updated = contacts.filter((c) => c.id !== id);
-    setContacts(updated);
-    localStorage.setItem('contacts', JSON.stringify(updated));
-  };
+  let etag = current.etag;
+  if (!etag) {
+    const fresh = await contactApi.getContact(current.organizationId, current.id);
+    etag = fresh.etag;
+  }
+  if (!etag) throw new Error('Missing etag for contact');
+
+  const updated = await contactApi.patchContact(
+    current.organizationId,
+    id,
+    patch,
+    etag
+  );
+
+  setContacts((prev) => prev.map((c) => (c.id === id ? updated : c)));
+};
+
+const deleteContact: DataContextType['deleteContact'] = async (id) => {
+  const current = contacts.find((c) => c.id === id);
+  if (!current) throw new Error('Contact not found');
+  if (!current.organizationId) throw new Error('Missing organizationId for contact');
+
+  let etag = current.etag;
+  if (!etag) {
+    const fresh = await contactApi.getContact(current.organizationId, current.id);
+    etag = fresh.etag;
+  }
+  if (!etag) throw new Error('Missing etag for contact');
+
+  await contactApi.deleteContact(current.organizationId, id, etag);
+  setContacts((prev) => prev.filter((c) => c.id !== id));
+};
 
   const addCustomField = (field: Omit<CustomField, 'id'>) => {
     const newField: CustomField = {

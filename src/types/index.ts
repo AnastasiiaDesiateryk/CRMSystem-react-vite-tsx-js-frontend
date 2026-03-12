@@ -26,6 +26,7 @@ export interface Contact {
   customFields?: Record<string, any>;
   createdAt: string;
   updatedAt: string;
+  etag?: string;
 }
 
 export interface User {

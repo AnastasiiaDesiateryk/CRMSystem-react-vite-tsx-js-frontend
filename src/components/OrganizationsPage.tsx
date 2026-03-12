@@ -87,7 +87,7 @@ export function OrganizationsPage() {
 
   const getOrgContacts = (orgId: string) => contacts.filter((c) => c.organizationId === orgId);
 
-  const handleAddOrg = () => {
+  const handleAddOrg = async () => {
     if (editingOrg) {
       updateOrganization(editingOrg.id, orgForm);
       setEditingOrg(null);
@@ -124,7 +124,7 @@ export function OrganizationsPage() {
     setIsOrgDialogOpen(true);
   };
 
-  const handleAddContact = () => {
+  const handleAddContact = async () => {
     if (editingContact) {
       updateContact(editingContact.id, contactForm);
       setEditingContact(null);
@@ -432,7 +432,9 @@ export function OrganizationsPage() {
                       <Button variant="outline" size="sm" onClick={() => handleEditOrg(org)}>
                         <Pencil className="w-4 h-4" />
                       </Button>
-                      <Button variant="outline" size="sm" onClick={() => deleteOrganization(org.id)}>
+                      <Button variant="outline" size="sm" onClick={async () => {
+    await deleteOrganization(org.id);
+  }}>
                         <Trash2 className="w-4 h-4" />
                       </Button>
                       <Dialog>
@@ -548,7 +550,9 @@ export function OrganizationsPage() {
                                           <Button
                                             variant="outline"
                                             size="sm"
-                                            onClick={() => deleteContact(contact.id)}
+                                            onClick={async () => {
+    await deleteContact(contact.id);
+  }}
                                           >
                                             <Trash2 className="w-4 h-4" />
                                           </Button>
