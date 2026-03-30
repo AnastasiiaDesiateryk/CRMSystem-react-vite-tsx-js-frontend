@@ -32,7 +32,7 @@ export function LoginPage() {
       setError('Email already exists');
     } else {
       setError('');
-      alert('Registration successful! Please login.');
+      alert('Registration successful!');
       setRegisterEmail('');
       setRegisterPassword('');
       setRegisterName('');

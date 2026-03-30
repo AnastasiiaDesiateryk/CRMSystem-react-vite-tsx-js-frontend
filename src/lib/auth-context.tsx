@@ -57,19 +57,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * - This does NOT validate token freshness.
    * - Real validation happens server-side.
    */
-
   useEffect(() => {
-    const savedUser = localStorage.getItem(USER_KEY);
-    const token = localStorage.getItem(TOKEN_KEY);
+    let cancelled = false;
 
-    if (savedUser && token) {
-      setUser(JSON.parse(savedUser));
-    } else {
-      localStorage.removeItem(USER_KEY);
-      localStorage.removeItem(TOKEN_KEY);
-      setUser(null);
-    }
-  }, []);
+    (async () => {
+      const token = localStorage.getItem(TOKEN_KEY);
+
+      if (!token) {
+        clearSession();
+        return;
+      }
+
+      try {
+        const me = await authApi.me();
+        if (cancelled) return;
+
+        localStorage.setItem(USER_KEY, JSON.stringify(me));
+        setUser(me);
+      } catch {
+        if (!cancelled) {
+          clearSession();
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+}, []);
 
   // global logout event (from axios interceptor)
 useEffect(() => {
