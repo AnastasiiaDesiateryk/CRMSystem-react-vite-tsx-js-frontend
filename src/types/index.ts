@@ -6,7 +6,8 @@ export interface Organization {
   linkedinUrl?: string;
   countryRegion: string;
   email: string;
-  category: 'additive-manufacturing' | 'mobility-fleet-management' | 'product-origin-authentication' | 'warehousing-intralogistics-robotics' | 'packaging-bins-containers';
+  // category: 'additive-manufacturing' | 'mobility-fleet-management' | 'product-origin-authentication' | 'warehousing-intralogistics-robotics' | 'packaging-bins-containers';
+  category: string;
   status: 'active' | 'inactive' | 'closed';
   notes?: string;
   customFields?: Record<string, any>;
