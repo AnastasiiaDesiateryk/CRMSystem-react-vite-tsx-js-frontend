@@ -1,10 +1,10 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
-import { toast } from 'sonner';
+
 
 interface EmailDialogProps {
   open: boolean;
@@ -16,16 +16,37 @@ export function EmailDialog({ open, onOpenChange, recipients }: EmailDialogProps
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
 
-  const handleSend = () => {
-    // In production, this would integrate with an email service
-    // For now, we'll show a success message
-    toast.success(`Email sent to ${recipients.length} recipient(s)!`, {
-      description: 'Your email has been queued for delivery.',
-    });
-    setSubject('');
-    setBody('');
-    onOpenChange(false);
-  };
+  const uniqueRecipients = useMemo(() => {
+  return Array.from(
+    new Set(
+      recipients
+        .map((email) => email?.trim().toLowerCase())
+        .filter((email): email is string => Boolean(email))
+    )
+  );
+}, [recipients]);
+
+const handleMailTo = () => {
+  if (uniqueRecipients.length === 0) return;
+
+  const params = new URLSearchParams();
+  params.set('bcc', uniqueRecipients.join(','));
+
+  if (subject.trim()) {
+    params.set('subject', subject);
+  }
+
+  if (body.trim()) {
+    params.set('body', body);
+  }
+
+  const mailtoUrl = `mailto:?${params.toString()}`;
+  window.location.href = mailtoUrl;
+
+  setSubject('');
+  setBody('');
+  onOpenChange(false);
+};
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -61,7 +82,7 @@ export function EmailDialog({ open, onOpenChange, recipients }: EmailDialogProps
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSend} disabled={!subject || !body}>
+            <Button onClick={handleMailTo} disabled={uniqueRecipients.length === 0}>
               Send Email
             </Button>
           </div>

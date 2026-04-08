@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Organization, Contact, CustomField } from '../types';
 import * as orgApi from './organizations-api';
 import * as contactApi from './contacts-api';
@@ -19,7 +19,7 @@ interface DataContextType {
   addCustomField: (field: Omit<CustomField, 'id'>) => void;
   deleteCustomField: (id: string) => void;
 
-  importData: (orgs: Organization[], conts: Contact[]) => void;
+  reloadData: () => Promise<void>;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -29,41 +29,31 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
 
-  useEffect(() => {
-    let cancelled = false;
+const reloadData = useCallback(async () => {
+  try {
+    const orgs = await orgApi.listOrganizations();
+    setOrganizations(orgs);
 
-    (async () => {
-      try {
-        const orgs = await orgApi.listOrganizations();
-       if (cancelled) return;
+    const contactLists = await Promise.all(
+      orgs.map(async (org) => {
+        try {
+          return await contactApi.listContactsByOrganization(org.id);
+        } catch {
+          return [];
+        }
+      })
+    );
 
-      setOrganizations(orgs);
-
-      const contactLists = await Promise.all(
-        orgs.map(async (org) => {
-          try {
-            return await contactApi.listContactsByOrganization(org.id);
-          } catch {
-            return [];
-          }
-        })
-      );
-
-      if (!cancelled) {
-        setContacts(contactLists.flat());
-      }
-    } catch {
-      if (!cancelled) {
-        setOrganizations([]);
-        setContacts([]);
-      }
-    }
-  })();
-
-  return () => {
-    cancelled = true;
-  };
+    setContacts(contactLists.flat());
+  } catch {
+    setOrganizations([]);
+    setContacts([]);
+  }
 }, []);
+
+useEffect(() => {
+  reloadData();
+}, [reloadData]);
 
 
 
@@ -145,11 +135,6 @@ const deleteContact: DataContextType['deleteContact'] = async (id) => {
     setCustomFields((prev) => prev.filter((f) => f.id !== id));
   };
 
-  const importData = (orgs: Organization[], conts: Contact[]) => {
-    setOrganizations(orgs);
-    setContacts(conts);
-  };
-
   return (
     <DataContext.Provider
       value={{
@@ -164,7 +149,7 @@ const deleteContact: DataContextType['deleteContact'] = async (id) => {
         deleteContact,
         addCustomField,
         deleteCustomField,
-        importData,
+        reloadData,
       }}
     >
       {children}

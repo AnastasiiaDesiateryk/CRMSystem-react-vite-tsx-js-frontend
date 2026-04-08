@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { useData } from '../lib/data-context';
+import * as importApi from '../lib/import-api';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Download, Upload, Copy, Check } from 'lucide-react';
@@ -10,7 +11,7 @@ import { Label } from './ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 export function ImportExportPage() {
-  const { organizations, contacts, importData } = useData();
+  const { organizations, contacts, reloadData } = useData();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importedEmails, setImportedEmails] = useState<string>('');
   const [emailDelimiter, setEmailDelimiter] = useState<string>('comma');
@@ -63,67 +64,140 @@ export function ImportExportPage() {
     toast.success('Data exported successfully!');
   };
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  const DATABASE_SHEET_NAME = 'Database';
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = new Uint8Array(event.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: 'array' });
+const REQUIRED_HEADERS = [
+  'Company',
+  'Website',
+  'LinkedIn',
+  'Cantone',
+  'Email organization',
+  'Category NEW',
+  'Name personal contact',
+  'Email personal contact (1)',
+  'Email personal contact (2)',
+] as const;
 
-        // Read Organizations
-        const orgsSheet = workbook.Sheets['Organizations'];
-        const orgsJson = XLSX.utils.sheet_to_json(orgsSheet) as any[];
-        const importedOrgs = orgsJson.map((row) => ({
-          id: row.ID || Date.now().toString() + Math.random(),
-          name: row.Name || '',
-          website: row.Website || '',
-          websiteStatus: row['Website Status'] as 'working' | 'not-working' | undefined,
-          linkedinUrl: row['LinkedIn URL'] || '',
-          countryRegion: row['Country/Region'] || '',
-          email: row.Email || '',
-          category: row.Category || 'additive-manufacturing',
-          status: row.Status || 'active',
-          notes: row.Notes || '',
-          createdAt: row['Created At'] || new Date().toISOString(),
-          updatedAt: row['Updated At'] || new Date().toISOString(),
-        }));
+function normalizeHeader(value: string): string {
+  return value.trim().replace(/\s+/g, ' ').toLowerCase();
+}
 
-        // Read Contacts
-        const contactsSheet = workbook.Sheets['Contacts'];
-        const contactsJson = XLSX.utils.sheet_to_json(contactsSheet) as any[];
-        const importedContacts = contactsJson.map((row) => ({
-          id: row.ID || Date.now().toString() + Math.random(),
-          organizationId: row['Organization ID'] || '',
-          name: row.Name || '',
-          rolePosition: row['Role/Position'] || '',
-          email: row.Email || '',
-          preferredLanguage: (row['Preferred Language'] || 'EN') as 'DE' | 'EN' | 'FR',
-          notes: row.Notes || '',
-          createdAt: row['Created At'] || new Date().toISOString(),
-          updatedAt: row['Updated At'] || new Date().toISOString(),
-        }));
+function buildHeaderIndexMap(sheet: XLSX.WorkSheet): Record<string, number> {
+  const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(sheet, {
+    header: 1,
+    defval: '',
+  });
 
-        // Extract emails and format them
-        const emails = importedContacts.map(c => c.email).filter(e => e);
-        formatAndDisplayEmails(emails);
+  const headerRow = rows[0];
+  if (!headerRow || !Array.isArray(headerRow)) {
+    throw new Error(`Sheet "${DATABASE_SHEET_NAME}" has no header row`);
+  }
 
-        importData(importedOrgs, importedContacts);
-        toast.success(`Imported ${importedOrgs.length} organizations and ${importedContacts.length} contacts!`);
-      } catch (error) {
-        toast.error('Error importing file. Please check the format.');
-        console.error(error);
-      }
-    };
-    reader.readAsArrayBuffer(file);
+  const map: Record<string, number> = {};
+  headerRow.forEach((cell, index) => {
+    const header = normalizeHeader(String(cell ?? ''));
+    if (header) {
+      map[header] = index;
+    }
+  });
+
+  return map;
+}
+
+function validateRequiredHeaders(headerMap: Record<string, number>) {
+  const missing = REQUIRED_HEADERS.filter(
+    (header) => headerMap[normalizeHeader(header)] === undefined
+  );
+
+  if (missing.length > 0) {
+    throw new Error(
+      `Missing required columns in "${DATABASE_SHEET_NAME}": ${missing.join(', ')}`
+    );
+  }
+}
+
+function extractImportedEmailsFromDatabaseSheet(sheet: XLSX.WorkSheet): string[] {
+  const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(sheet, {
+    header: 1,
+    defval: '',
+  });
+
+  const headerMap = buildHeaderIndexMap(sheet);
+  validateRequiredHeaders(headerMap);
+
+  const email1Index = headerMap[normalizeHeader('Email personal contact (1)')];
+  const email2Index = headerMap[normalizeHeader('Email personal contact (2)')];
+
+  const emails = new Set<string>();
+
+  for (let i = 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!Array.isArray(row)) continue;
+
+    const email1 = String(row[email1Index] ?? '').trim().toLowerCase();
+    const email2 = String(row[email2Index] ?? '').trim().toLowerCase();
+
+    if (email1) emails.add(email1);
+    if (email2) emails.add(email2);
+  }
+
+  return Array.from(emails);
+}
+
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  try {
+    const lowerName = file.name.toLowerCase();
+    const isExcelFile = lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls');
+
+    if (!isExcelFile) {
+      throw new Error('Please upload an Excel file (.xlsx or .xls)');
+    }
+
+    const buffer = await file.arrayBuffer();
+    const workbook = XLSX.read(buffer, { type: 'array' });
+
+    if (!workbook.SheetNames.includes(DATABASE_SHEET_NAME)) {
+      throw new Error(`Sheet "${DATABASE_SHEET_NAME}" not found`);
+    }
+
+    const databaseSheet = workbook.Sheets[DATABASE_SHEET_NAME];
+    const emails = extractImportedEmailsFromDatabaseSheet(databaseSheet);
+    formatAndDisplayEmails(emails);
     
-    // Reset input
+    const result = await importApi.importOrganizationsExcel(file);
+
+    await reloadData();
+
+    toast.success(
+      `Import completed: ${result.organizationsCreated} created, ${result.organizationsUpdated} updated, ${result.contactsCreated} contacts created`
+    );
+
+    if (result.rowsSkipped > 0) {
+      toast.info(`${result.rowsSkipped} row(s) were skipped`);
+    }
+
+    if (result.warnings.length > 0) {
+      console.warn('Import warnings:', result.warnings);
+      toast.warning(
+        result.warnings.length === 1
+          ? result.warnings[0]
+          : `${result.warnings.length} warning(s) during import. Check console for details.`
+      );
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : 'Error importing file';
+    toast.error(message);
+    console.error(error);
+  } finally {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  };
+  }
+};
 
   const formatAndDisplayEmails = (emails: string[]) => {
     let formatted = '';
@@ -151,7 +225,6 @@ export function ImportExportPage() {
   };
 
   const handleDelimiterChange = (newDelimiter: string) => {
-    const oldDelimiter = emailDelimiter;
     setEmailDelimiter(newDelimiter);
     if (importedEmails) {
       // Re-format existing emails with new delimiter
@@ -227,8 +300,8 @@ export function ImportExportPage() {
               <p>File requirements:</p>
               <ul className="list-disc list-inside mt-2 space-y-1">
                 <li>Excel format (.xlsx or .xls)</li>
-                <li>Two sheets: "Organizations" and "Contacts"</li>
-                <li>Same column structure as exported files</li>
+                <li>Required sheet: "Database"</li>
+                <li>Columns must match the import template</li>
               </ul>
             </div>
           </CardContent>
@@ -243,43 +316,28 @@ export function ImportExportPage() {
           <div>
             <h3 className="mb-2">Excel File Structure</h3>
             <p className="text-muted-foreground mb-2">
-              Your Excel file should contain two sheets with the following columns:
+              The import file must contain a sheet named <strong>Database</strong> with these required columns:
             </p>
             <div className="grid md:grid-cols-2 gap-4">
               <div>
-                <p className="mb-2">Organizations Sheet:</p>
                 <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-                  <li>ID</li>
-                  <li>Name</li>
+                  <li>Company</li>
                   <li>Website</li>
-                  <li>Website Status</li>
-                  <li>LinkedIn URL</li>
-                  <li>Country/Region</li>
-                  <li>Email</li>
-                  <li>Category (start-up, corporate, investor, etc.)</li>
-                  <li>Status (active, inactive, closed)</li>
-                  <li>Notes</li>
-                </ul>
-              </div>
-              <div>
-                <p className="mb-2">Contacts Sheet:</p>
-                <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-                  <li>ID</li>
-                  <li>Organization ID</li>
-                  <li>Organization Name</li>
-                  <li>Name</li>
-                  <li>Role/Position</li>
-                  <li>Email</li>
-                  <li>Preferred Language (DE, EN, FR)</li>
-                  <li>Notes</li>
+                  <li>LinkedIn</li>
+                  <li>Cantone</li>
+                  <li>Email organization</li>
+                  <li>Category NEW</li>
+                  <li>Name personal contact</li>
+                  <li>Email personal contact (1)</li>
+                  <li>Email personal contact (2)</li>
                 </ul>
               </div>
             </div>
           </div>
           <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
             <p className="text-amber-900">
-              <strong>Note:</strong> Importing data will replace all existing organizations and contacts. 
-              Make sure to export your current data before importing to avoid data loss.
+              <strong>Note:</strong> Import reads the <strong>Database</strong> sheet and uploads data to the backend.
+              Existing records are merged by deduplication rules and are not overwritten by blank Excel values.
             </p>
           </div>
         </CardContent>

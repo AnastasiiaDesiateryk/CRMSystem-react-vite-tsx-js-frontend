@@ -1,10 +1,9 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useData } from '../lib/data-context';
 import { Organization, Contact } from '../types';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { Badge } from './ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from './ui/dialog';
 import { Label } from './ui/label';
@@ -14,17 +13,8 @@ import { Plus, Pencil, Trash2, Users, Mail, Globe, FileText, StickyNote, Filter,
 import { EmailDialog } from './EmailDialog';
 import { Checkbox } from './ui/checkbox';
 
-const CATEGORIES = [
-  { value: 'additive-manufacturing', label: 'Additive Manufacturing' },
-  { value: 'mobility-fleet-management', label: 'Mobility & Fleet Management' },
-  { value: 'product-origin-authentication', label: 'Product Origin & Authentication' },
-  { value: 'warehousing-intralogistics-robotics', label: 'Warehousing, Intralogistics & Robotics' },
-  { value: 'packaging-bins-containers', label: 'Packaging, Bins & Containers' },
-];
-
-const formatCategory = (category: string) => {
-  const cat = CATEGORIES.find(c => c.value === category);
-  return cat ? cat.label : category;
+const formatCategory = (category?: string | null) => {
+  return category?.trim() || 'Uncategorized';
 };
 
 export function OrganizationsPage() {
@@ -51,7 +41,7 @@ export function OrganizationsPage() {
     linkedinUrl: '',
     countryRegion: '',
     email: '',
-    category: 'additive-manufacturing' as Organization['category'],
+    category: '',
     status: 'active' as Organization['status'],
     notes: '',
   });
@@ -65,15 +55,30 @@ export function OrganizationsPage() {
     notes: '',
   });
 
-  const filteredOrganizations = organizations.filter(
-    (org) =>
-      org.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      org.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      org.category.toLowerCase().includes(searchTerm.toLowerCase())
-  ).filter(
-    (org) => categoryFilter === 'all' || org.category === categoryFilter
-  ).sort((a, b) => {
-    // Если статусы показываются, сортируем: not-working наверх
+  const availableCategories = useMemo(() => {
+  return Array.from(
+    new Set(
+      organizations
+        .map((org) => org.category?.trim())
+        .filter((category): category is string => Boolean(category))
+    )
+  ).sort((a, b) => a.localeCompare(b));
+}, [organizations]);
+
+
+const filteredOrganizations = organizations
+  .filter((org) => {
+    const query = searchTerm.trim().toLowerCase();
+    if (!query) return true;
+
+    return (
+      (org.name ?? '').toLowerCase().includes(query) ||
+      (org.email ?? '').toLowerCase().includes(query) ||
+      (org.category ?? '').toLowerCase().includes(query)
+    );
+  })
+  .filter((org) => categoryFilter === 'all' || org.category === categoryFilter)
+  .sort((a, b) => {
     if (showWebsiteStatus) {
       if (a.websiteStatus === 'not-working' && b.websiteStatus !== 'not-working') {
         return -1;
@@ -101,7 +106,7 @@ export function OrganizationsPage() {
       linkedinUrl: '',
       countryRegion: '',
       email: '',
-      category: 'additive-manufacturing',
+      category: '',
       status: 'active',
       notes: '',
     });
@@ -204,8 +209,10 @@ export function OrganizationsPage() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Categories</SelectItem>
-              {CATEGORIES.map(cat => (
-                <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+              {availableCategories.map((category) => (
+                <SelectItem key={category} value={category}>
+                  {formatCategory(category)}
+                </SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -315,8 +322,10 @@ export function OrganizationsPage() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {CATEGORIES.map(cat => (
-                          <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                        {availableCategories.map((category) => (
+                          <SelectItem key={category} value={category}>
+                            {formatCategory(category)}
+                          </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
@@ -643,8 +652,10 @@ export function OrganizationsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Categories</SelectItem>
-                  {CATEGORIES.map(cat => (
-                    <SelectItem key={cat.value} value={cat.value}>{cat.label}</SelectItem>
+                  {availableCategories.map((category) => (
+                    <SelectItem key={category} value={category}>
+                      {formatCategory(category)}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
