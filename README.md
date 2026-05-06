@@ -32,7 +32,7 @@ The focus of this project is a clean, maintainable UI with real-world CRM workfl
 
 - **React**
 - **Vite**
-- **TypeScript / JavaScript**
+- **TypeScript**
 - **CSS**
 - API integration via a lightweight service layer (`src/lib/*`)
 
