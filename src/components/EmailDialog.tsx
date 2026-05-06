@@ -4,7 +4,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { Textarea } from './ui/textarea';
-
+import { toast } from 'sonner';
 
 interface EmailDialogProps {
   open: boolean;
@@ -12,41 +12,50 @@ interface EmailDialogProps {
   recipients: string[];
 }
 
+function cleanEmails(emails: Array<string | null | undefined>) {
+  return [
+    ...new Set(
+      emails
+        .map((email) => email?.trim())
+        .filter((email): email is string => Boolean(email))
+    ),
+  ];
+}
+
 export function EmailDialog({ open, onOpenChange, recipients }: EmailDialogProps) {
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
 
-  const uniqueRecipients = useMemo(() => {
-  return Array.from(
-    new Set(
-      recipients
-        .map((email) => email?.trim().toLowerCase())
-        .filter((email): email is string => Boolean(email))
-    )
+  const cleanRecipients = useMemo(
+    () => cleanEmails(recipients),
+    [recipients]
   );
-}, [recipients]);
 
-const handleMailTo = () => {
-  if (uniqueRecipients.length === 0) return;
 
-  const params = new URLSearchParams();
-  params.set('bcc', uniqueRecipients.join(','));
+  const handleSend = () => {
+    if (cleanRecipients.length === 0) {
+      toast.error('No email recipients found.');
+      return;
+    }
 
-  if (subject.trim()) {
-    params.set('subject', subject);
-  }
+    const params = new URLSearchParams();
 
-  if (body.trim()) {
-    params.set('body', body);
-  }
+    params.set('bcc', cleanRecipients.join(','));
 
-  const mailtoUrl = `mailto:?${params.toString()}`;
-  window.location.href = mailtoUrl;
+    if (subject.trim()) {
+      params.set('subject', subject.trim());
+    }
 
-  setSubject('');
-  setBody('');
-  onOpenChange(false);
-};
+    if (body.trim()) {
+      params.set('body', body.trim());
+    }
+
+    window.location.href = `mailto:?${params.toString()}`;
+
+    setSubject('');
+    setBody('');
+    onOpenChange(false);
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -56,9 +65,13 @@ const handleMailTo = () => {
         </DialogHeader>
         <div className="space-y-4">
           <div className="space-y-2">
-            <Label>Recipients ({recipients.length})</Label>
+            <Label>BCC recipients ({cleanRecipients.length})</Label>
             <div className="p-3 bg-muted rounded-md max-h-32 overflow-y-auto">
-              <p className="text-sm">{recipients.join(', ')}</p>
+              {cleanRecipients.length > 0 ? (
+                <p className="text-sm break-words">{cleanRecipients.join(', ')}</p>
+              ) : (
+                <p className="text-sm text-muted-foreground">No email recipients found.</p>
+              )}
             </div>
           </div>
           <div className="space-y-2">
@@ -82,7 +95,7 @@ const handleMailTo = () => {
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button onClick={handleMailTo} disabled={uniqueRecipients.length === 0}>
+            <Button onClick={handleSend} disabled={cleanRecipients.length === 0}>
               Send Email
             </Button>
           </div>

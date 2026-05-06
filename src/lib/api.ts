@@ -12,8 +12,12 @@ import axios, { AxiosHeaders } from "axios";
  */
 
 
-export const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL ?? 'http://localhost:8080',
+const API_BASE_URL = import.meta.env.DEV
+  ? import.meta.env.VITE_API_URL_LOCAL
+  : import.meta.env.VITE_API_URL;
+
+  export const api = axios.create({
+  baseURL: API_BASE_URL || "http://localhost:8080",
 });
 
 /**
@@ -62,6 +66,7 @@ export function toApiMessage(err: unknown): string {
   if (status === 412) return "Conflict: data was changed by someone else. Refresh and try again.";
   if (status === 401) return "Session expired. Please log in again.";
   if (status === 403) return "Access denied.";
+  if (status === 504) return "Import timed out. Try a smaller file or check backend logs.";
   return msg || code || "Unexpected error";
 }
 

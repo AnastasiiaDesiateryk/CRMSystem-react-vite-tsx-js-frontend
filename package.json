@@ -1,5 +1,5 @@
 {
-      "name": "CRM System Setup",
+      "name": "crmsystemsetup",
       "version": "0.1.0",
       "private": true,
       "dependencies": {

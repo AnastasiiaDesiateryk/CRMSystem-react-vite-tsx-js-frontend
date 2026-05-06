@@ -21,16 +21,13 @@ export function OrganizationsPage() {
   const { organizations, contacts, addOrganization, updateOrganization, deleteOrganization, addContact, updateContact, deleteContact } = useData();
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
-  const [selectedOrg, setSelectedOrg] = useState<Organization | null>(null);
   const [isOrgDialogOpen, setIsOrgDialogOpen] = useState(false);
   const [isContactDialogOpen, setIsContactDialogOpen] = useState(false);
   const [editingOrg, setEditingOrg] = useState<Organization | null>(null);
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [emailDialogOpen, setEmailDialogOpen] = useState(false);
   const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
-  const [isSelectiveEmailDialogOpen, setIsSelectiveEmailDialogOpen] = useState(false);
   const [selectedOrgIds, setSelectedOrgIds] = useState<string[]>([]);
-  const [selectiveEmailCategory, setSelectiveEmailCategory] = useState<string>('all');
   const [showWebsiteStatus, setShowWebsiteStatus] = useState(false);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
 
@@ -79,6 +76,7 @@ const filteredOrganizations = organizations
   })
   .filter((org) => categoryFilter === 'all' || org.category === categoryFilter)
   .sort((a, b) => {
+    //  not-working up
     if (showWebsiteStatus) {
       if (a.websiteStatus === 'not-working' && b.websiteStatus !== 'not-working') {
         return -1;
@@ -162,29 +160,48 @@ const filteredOrganizations = organizations
 
   const handleSendEmail = (orgId?: string) => {
     if (orgId) {
+      const org = organizations.find((o) => o.id === orgId);
       const orgContacts = getOrgContacts(orgId);
-      setSelectedEmails(orgContacts.map(c => c.email));
-    } else {
-      setSelectedEmails(contacts.map(c => c.email));
+
+      setSelectedEmails([
+        org?.email ?? '',
+        ...orgContacts.map((c) => c.email),
+      ]);
+
+      setEmailDialogOpen(true);
+      return;
     }
+
+    setSelectedEmails([
+      ...organizations.map((org) => org.email),
+      ...contacts.map((contact) => contact.email),
+    ]);
+
     setEmailDialogOpen(true);
   };
 
   const handleSelectiveEmail = () => {
-    if (!isSelectionMode) {
-      // Первое нажатие - активировать режим выбора
-      setIsSelectionMode(true);
-      setSelectedOrgIds([]);
-    } else {
-      // Второе нажатие - отправить email
-      const selectedOrgs = organizations.filter(org => selectedOrgIds.includes(org.id));
-      const selectedContacts = selectedOrgs.flatMap(org => getOrgContacts(org.id));
-      setSelectedEmails(selectedContacts.map(c => c.email));
-      setEmailDialogOpen(true);
-      setIsSelectionMode(false);
-      setSelectedOrgIds([]);
-    }
-  };
+  if (!isSelectionMode) {
+    setIsSelectionMode(true);
+    setSelectedOrgIds([]);
+    return;
+  }
+
+  const selectedOrgs = organizations.filter((org) =>
+    selectedOrgIds.includes(org.id)
+  );
+
+  setSelectedEmails(
+    selectedOrgs.flatMap((org) => [
+      org.email,
+      ...getOrgContacts(org.id).map((contact) => contact.email),
+    ])
+  );
+
+  setEmailDialogOpen(true);
+  setIsSelectionMode(false);
+  setSelectedOrgIds([]);
+};
 
   const toggleOrgSelection = (orgId: string) => {
     if (selectedOrgIds.includes(orgId)) {
@@ -442,8 +459,8 @@ const filteredOrganizations = organizations
                         <Pencil className="w-4 h-4" />
                       </Button>
                       <Button variant="outline" size="sm" onClick={async () => {
-    await deleteOrganization(org.id);
-  }}>
+                          await deleteOrganization(org.id);
+                        }}>
                         <Trash2 className="w-4 h-4" />
                       </Button>
                       <Dialog>
@@ -560,9 +577,8 @@ const filteredOrganizations = organizations
                                             variant="outline"
                                             size="sm"
                                             onClick={async () => {
-    await deleteContact(contact.id);
-  }}
-                                          >
+                                              await deleteContact(contact.id);
+                                            }}>
                                             <Trash2 className="w-4 h-4" />
                                           </Button>
                                         </div>
@@ -631,78 +647,8 @@ const filteredOrganizations = organizations
         onOpenChange={setEmailDialogOpen}
         recipients={selectedEmails}
       />
-
-      <Dialog open={isSelectiveEmailDialogOpen} onOpenChange={setIsSelectiveEmailDialogOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Send Email to Selected Organizations</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Label>Filter by Category</Label>
-              <Select
-                value={selectiveEmailCategory}
-                onValueChange={(value: string) => {
-                  setSelectiveEmailCategory(value);
-                  setSelectedOrgIds([]);
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Categories</SelectItem>
-                  {availableCategories.map((category) => (
-                    <SelectItem key={category} value={category}>
-                      {formatCategory(category)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            
-            <div className="space-y-2">
-              <Label>Select Organizations</Label>
-              <div className="border rounded-lg p-4 max-h-[400px] overflow-y-auto space-y-2">
-                {organizations
-                  .filter(org => selectiveEmailCategory === 'all' || org.category === selectiveEmailCategory)
-                  .map(org => (
-                    <div key={org.id} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`org-${org.id}`}
-                        checked={selectedOrgIds.includes(org.id)}
-                        onCheckedChange={(checked: boolean | 'indeterminate') => {
-                          const isChecked = checked === true;
-
-                          setSelectedOrgIds((prev) =>
-                            isChecked ? (prev.includes(org.id) ? prev : [...prev, org.id]) : prev.filter((id) => id !== org.id)
-                          );
-                        }}
-                      />
-                      <label
-                        htmlFor={`org-${org.id}`}
-                        className="text-sm cursor-pointer flex-1"
-                      >
-                        {org.name} ({getOrgContacts(org.id).length} contacts)
-                      </label>
-                    </div>
-                  ))}
-              </div>
-              <p className="text-sm text-muted-foreground">
-                {selectedOrgIds.length} organization(s) selected
-              </p>
-            </div>
-
-            <Button 
-              onClick={handleSelectiveEmail} 
-              className="w-full"
-              disabled={selectedOrgIds.length === 0}
-            >
-              Send Email to {selectedOrgIds.length} Organization(s)
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+  </div>
   );
 }
+
+     

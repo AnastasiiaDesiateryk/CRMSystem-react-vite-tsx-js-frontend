@@ -1,27 +1,33 @@
 import { useRef, useState } from 'react';
 import { useData } from '../lib/data-context';
-import * as importApi from '../lib/import-api';
+import { api, toApiMessage } from '../lib/api';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
-import { Download, Upload, Copy, Check } from 'lucide-react';
+import { Download, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import * as XLSX from 'xlsx';
-import { Textarea } from './ui/textarea';
-import { Label } from './ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
+
+type ImportOrganizationsResponse = {
+  organizationsCreated: number;
+  organizationsUpdated: number;
+  contactsCreated: number;
+  rowsSkipped: number;
+  warnings: string[];
+};
+
+const IMPORT_ENDPOINT = '/api/imports/organizations/excel';
 
 export function ImportExportPage() {
-  const { organizations, contacts, reloadData } = useData();
+  const { organizations, contacts } = useData();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [importedEmails, setImportedEmails] = useState<string>('');
-  const [emailDelimiter, setEmailDelimiter] = useState<string>('comma');
-  const [copied, setCopied] = useState(false);
+
+  const [isImporting, setIsImporting] = useState(false);
+  const [lastImportResult, setLastImportResult] =
+    useState<ImportOrganizationsResponse | null>(null);
 
   const handleExport = () => {
-    // Create workbook
     const wb = XLSX.utils.book_new();
 
-    // Organizations sheet
     const orgsData = organizations.map((org) => ({
       ID: org.id,
       Name: org.name,
@@ -36,12 +42,13 @@ export function ImportExportPage() {
       'Created At': org.createdAt,
       'Updated At': org.updatedAt,
     }));
+
     const orgsSheet = XLSX.utils.json_to_sheet(orgsData);
     XLSX.utils.book_append_sheet(wb, orgsSheet, 'Organizations');
 
-    // Contacts sheet
     const contactsData = contacts.map((contact) => {
       const org = organizations.find((o) => o.id === contact.organizationId);
+
       return {
         ID: contact.id,
         'Organization Name': org?.name || '',
@@ -55,195 +62,64 @@ export function ImportExportPage() {
         'Updated At': contact.updatedAt,
       };
     });
+
     const contactsSheet = XLSX.utils.json_to_sheet(contactsData);
     XLSX.utils.book_append_sheet(wb, contactsSheet, 'Contacts');
 
-    // Download
     const timestamp = new Date().toISOString().split('T')[0];
     XLSX.writeFile(wb, `crm-export-${timestamp}.xlsx`);
-    toast.success('Data exported successfully!');
+
+    toast.success('Export completed');
   };
 
-  const DATABASE_SHEET_NAME = 'Database';
-
-const REQUIRED_HEADERS = [
-  'Company',
-  'Website',
-  'LinkedIn',
-  'Cantone',
-  'Email organization',
-  'Category NEW',
-  'Name personal contact',
-  'Email personal contact (1)',
-  'Email personal contact (2)',
-] as const;
-
-function normalizeHeader(value: string): string {
-  return value.trim().replace(/\s+/g, ' ').toLowerCase();
-}
-
-function buildHeaderIndexMap(sheet: XLSX.WorkSheet): Record<string, number> {
-  const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(sheet, {
-    header: 1,
-    defval: '',
-  });
-
-  const headerRow = rows[0];
-  if (!headerRow || !Array.isArray(headerRow)) {
-    throw new Error(`Sheet "${DATABASE_SHEET_NAME}" has no header row`);
-  }
-
-  const map: Record<string, number> = {};
-  headerRow.forEach((cell, index) => {
-    const header = normalizeHeader(String(cell ?? ''));
-    if (header) {
-      map[header] = index;
-    }
-  });
-
-  return map;
-}
-
-function validateRequiredHeaders(headerMap: Record<string, number>) {
-  const missing = REQUIRED_HEADERS.filter(
-    (header) => headerMap[normalizeHeader(header)] === undefined
-  );
-
-  if (missing.length > 0) {
-    throw new Error(
-      `Missing required columns in "${DATABASE_SHEET_NAME}": ${missing.join(', ')}`
-    );
-  }
-}
-
-function extractImportedEmailsFromDatabaseSheet(sheet: XLSX.WorkSheet): string[] {
-  const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(sheet, {
-    header: 1,
-    defval: '',
-  });
-
-  const headerMap = buildHeaderIndexMap(sheet);
-  validateRequiredHeaders(headerMap);
-
-  const email1Index = headerMap[normalizeHeader('Email personal contact (1)')];
-  const email2Index = headerMap[normalizeHeader('Email personal contact (2)')];
-
-  const emails = new Set<string>();
-
-  for (let i = 1; i < rows.length; i++) {
-    const row = rows[i];
-    if (!Array.isArray(row)) continue;
-
-    const email1 = String(row[email1Index] ?? '').trim().toLowerCase();
-    const email2 = String(row[email2Index] ?? '').trim().toLowerCase();
-
-    if (email1) emails.add(email1);
-    if (email2) emails.add(email2);
-  }
-
-  return Array.from(emails);
-}
-
-  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-
-  try {
-    const lowerName = file.name.toLowerCase();
-    const isExcelFile = lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls');
-
-    if (!isExcelFile) {
-      throw new Error('Please upload an Excel file (.xlsx or .xls)');
-    }
-
-    const buffer = await file.arrayBuffer();
-    const workbook = XLSX.read(buffer, { type: 'array' });
-
-    if (!workbook.SheetNames.includes(DATABASE_SHEET_NAME)) {
-      throw new Error(`Sheet "${DATABASE_SHEET_NAME}" not found`);
-    }
-
-    const databaseSheet = workbook.Sheets[DATABASE_SHEET_NAME];
-    const emails = extractImportedEmailsFromDatabaseSheet(databaseSheet);
-    formatAndDisplayEmails(emails);
-    
-    const result = await importApi.importOrganizationsExcel(file);
-
-    await reloadData();
-
-    toast.success(
-      `Import completed: ${result.organizationsCreated} created, ${result.organizationsUpdated} updated, ${result.contactsCreated} contacts created`
-    );
-
-    if (result.rowsSkipped > 0) {
-      toast.info(`${result.rowsSkipped} row(s) were skipped`);
-    }
-
-    if (result.warnings.length > 0) {
-      console.warn('Import warnings:', result.warnings);
-      toast.warning(
-        result.warnings.length === 1
-          ? result.warnings[0]
-          : `${result.warnings.length} warning(s) during import. Check console for details.`
-      );
-    }
-  } catch (error) {
-    const message =
-      error instanceof Error ? error.message : 'Error importing file';
-    toast.error(message);
-    console.error(error);
-  } finally {
+  const resetFileInput = () => {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
-  }
-};
+  };
 
-  const formatAndDisplayEmails = (emails: string[]) => {
-    let formatted = '';
-    switch (emailDelimiter) {
-      case 'comma':
-        formatted = emails.join(', ');
-        break;
-      case 'semicolon':
-        formatted = emails.join('; ');
-        break;
-      case 'newline':
-        formatted = emails.join('\n');
-        break;
-      default:
-        formatted = emails.join(', ');
+  const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+
+    if (!file) {
+      return;
     }
-    setImportedEmails(formatted);
-  };
 
-  const handleCopy = () => {
-    navigator.clipboard.writeText(importedEmails);
-    setCopied(true);
-    toast.success('Emails copied to clipboard!');
-    setTimeout(() => setCopied(false), 2000);
-  };
+    setLastImportResult(null);
 
-  const handleDelimiterChange = (newDelimiter: string) => {
-    setEmailDelimiter(newDelimiter);
-    if (importedEmails) {
-      // Re-format existing emails with new delimiter
-      const emails = importedEmails.split(/[,;\n]/).map(e => e.trim()).filter(e => e);
-      let formatted = '';
-      switch (newDelimiter) {
-        case 'comma':
-          formatted = emails.join(', ');
-          break;
-        case 'semicolon':
-          formatted = emails.join('; ');
-          break;
-        case 'newline':
-          formatted = emails.join('\n');
-          break;
-        default:
-          formatted = emails.join(', ');
-      }
-      setImportedEmails(formatted);
+    const lowerName = file.name.toLowerCase();
+
+    if (!lowerName.endsWith('.xlsx') && !lowerName.endsWith('.xls')) {
+      toast.error('Please upload an Excel file (.xlsx or .xls)');
+      resetFileInput();
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      setIsImporting(true);
+
+      const { data } = await api.post<ImportOrganizationsResponse>(
+        IMPORT_ENDPOINT,
+        formData,
+        {
+          timeout: 300_000,
+        }
+      );
+
+      setLastImportResult(data);
+
+      toast.success(
+        `Import completed: ${data.organizationsCreated} created, ${data.organizationsUpdated} updated, ${data.contactsCreated} contacts created`
+      );
+    } catch (error) {
+      toast.error(toApiMessage(error));
+      console.error('Import failed:', error);
+    } finally {
+      setIsImporting(false);
+      resetFileInput();
     }
   };
 
@@ -254,14 +130,16 @@ function extractImportedEmailsFromDatabaseSheet(sheet: XLSX.WorkSheet): string[]
           <CardHeader>
             <CardTitle>Export Data</CardTitle>
             <CardDescription>
-              Download all organizations and contacts as an Excel file
+              Download all organizations and contacts as an Excel file.
             </CardDescription>
           </CardHeader>
+
           <CardContent>
             <Button onClick={handleExport} className="w-full">
               <Download className="w-4 h-4 mr-2" />
               Export to Excel
             </Button>
+
             <div className="mt-4 text-sm text-muted-foreground">
               <p>The export will include:</p>
               <ul className="list-disc list-inside mt-2 space-y-1">
@@ -276,9 +154,10 @@ function extractImportedEmailsFromDatabaseSheet(sheet: XLSX.WorkSheet): string[]
           <CardHeader>
             <CardTitle>Import Data</CardTitle>
             <CardDescription>
-              Upload an Excel file to update your CRM data
+              Upload the source Excel file. The backend will parse the Database sheet and save the data.
             </CardDescription>
           </CardHeader>
+
           <CardContent>
             <input
               ref={fileInputRef}
@@ -287,21 +166,28 @@ function extractImportedEmailsFromDatabaseSheet(sheet: XLSX.WorkSheet): string[]
               onChange={handleImport}
               className="hidden"
               id="file-upload"
+              disabled={isImporting}
             />
+
             <Button
               onClick={() => fileInputRef.current?.click()}
               variant="outline"
               className="w-full"
+              disabled={isImporting}
             >
               <Upload className="w-4 h-4 mr-2" />
-              Import from Excel
+              {isImporting ? 'Importing...' : 'Import from Excel'}
             </Button>
+
             <div className="mt-4 text-sm text-muted-foreground">
               <p>File requirements:</p>
               <ul className="list-disc list-inside mt-2 space-y-1">
-                <li>Excel format (.xlsx or .xls)</li>
-                <li>Required sheet: "Database"</li>
-                <li>Columns must match the import template</li>
+                <li>Excel format: .xlsx or .xls</li>
+                <li>Sheet name: Database</li>
+                <li>
+                  Required columns: Company, Website, LinkedIn, Cantone, Email organization,
+                  Category NEW, Name personal contact, Email personal contact (1), Email personal contact (2)
+                </li>
               </ul>
             </div>
           </CardContent>
@@ -310,95 +196,82 @@ function extractImportedEmailsFromDatabaseSheet(sheet: XLSX.WorkSheet): string[]
 
       <Card>
         <CardHeader>
-          <CardTitle>Import/Export Guidelines</CardTitle>
+          <CardTitle>Import Behavior</CardTitle>
+          <CardDescription>
+            The import is processed by the backend and written directly to the database.
+          </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <h3 className="mb-2">Excel File Structure</h3>
-            <p className="text-muted-foreground mb-2">
-              The import file must contain a sheet named <strong>Database</strong> with these required columns:
-            </p>
-            <div className="grid md:grid-cols-2 gap-4">
-              <div>
-                <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
-                  <li>Company</li>
-                  <li>Website</li>
-                  <li>LinkedIn</li>
-                  <li>Cantone</li>
-                  <li>Email organization</li>
-                  <li>Category NEW</li>
-                  <li>Name personal contact</li>
-                  <li>Email personal contact (1)</li>
-                  <li>Email personal contact (2)</li>
-                </ul>
-              </div>
-            </div>
-          </div>
-          <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
-            <p className="text-amber-900">
-              <strong>Note:</strong> Import reads the <strong>Database</strong> sheet and uploads data to the backend.
-              Existing records are merged by deduplication rules and are not overwritten by blank Excel values.
-            </p>
-          </div>
+
+        <CardContent className="space-y-4 text-sm text-muted-foreground">
+          <p>
+            Organizations are matched by website when available. If no website is available,
+            the organization name is used.
+          </p>
+
+          <p>
+            Existing organizations are updated. New organizations and contacts are created when
+            no matching record exists.
+          </p>
+
+          <p>
+            Empty rows are skipped. Duplicate contacts with the same organization and email are
+            skipped and reported as warnings.
+          </p>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Imported Email List</CardTitle>
-          <CardDescription>
-            After importing an Excel file, all contact emails will appear here for easy copying
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email-delimiter">Email Delimiter</Label>
-            <Select value={emailDelimiter} onValueChange={handleDelimiterChange}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="comma">Comma (,)</SelectItem>
-                <SelectItem value="semicolon">Semicolon (;)</SelectItem>
-                <SelectItem value="newline">New Line</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="imported-emails">Email List</Label>
-            <Textarea
-              id="imported-emails"
-              value={importedEmails}
-              onChange={(e) => setImportedEmails(e.target.value)}
-              placeholder="Import an Excel file to see emails here..."
-              className="h-40 font-mono text-sm"
-              readOnly
-            />
-            {importedEmails && (
-              <p className="text-sm text-muted-foreground">
-                {importedEmails.split(/[,;\n]/).filter(e => e.trim()).length} email(s) found
-              </p>
+      {lastImportResult && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Last Import Result</CardTitle>
+            <CardDescription>
+              Summary returned by the backend.
+            </CardDescription>
+          </CardHeader>
+
+          <CardContent className="space-y-4">
+            <div className="grid md:grid-cols-4 gap-4">
+              <div className="rounded-lg border p-4">
+                <p className="text-sm text-muted-foreground">Organizations created</p>
+                <p className="text-2xl font-semibold">{lastImportResult.organizationsCreated}</p>
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <p className="text-sm text-muted-foreground">Organizations updated</p>
+                <p className="text-2xl font-semibold">{lastImportResult.organizationsUpdated}</p>
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <p className="text-sm text-muted-foreground">Contacts created</p>
+                <p className="text-2xl font-semibold">{lastImportResult.contactsCreated}</p>
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <p className="text-sm text-muted-foreground">Rows skipped</p>
+                <p className="text-2xl font-semibold">{lastImportResult.rowsSkipped}</p>
+              </div>
+            </div>
+
+            {lastImportResult.warnings.length > 0 && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <p className="mb-2 font-medium text-amber-900">Warnings</p>
+
+                <ul className="list-disc list-inside space-y-1 text-sm text-amber-900">
+                  {lastImportResult.warnings.slice(0, 20).map((warning, index) => (
+                    <li key={index}>{warning}</li>
+                  ))}
+                </ul>
+
+                {lastImportResult.warnings.length > 20 && (
+                  <p className="mt-2 text-sm text-amber-900">
+                    Showing first 20 of {lastImportResult.warnings.length} warnings.
+                  </p>
+                )}
+              </div>
             )}
-          </div>
-          <Button 
-            onClick={handleCopy} 
-            className="w-full"
-            disabled={!importedEmails}
-          >
-            {copied ? (
-              <>
-                <Check className="w-4 h-4 mr-2" />
-                Copied!
-              </>
-            ) : (
-              <>
-                <Copy className="w-4 h-4 mr-2" />
-                Copy Emails to Clipboard
-              </>
-            )}
-          </Button>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
