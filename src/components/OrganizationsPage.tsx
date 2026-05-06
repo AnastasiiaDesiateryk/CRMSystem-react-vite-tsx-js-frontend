@@ -17,6 +17,12 @@ const formatCategory = (category?: string | null) => {
   return category?.trim() || 'Uncategorized';
 };
 
+const normalizeText = (value: unknown) =>
+  String(value ?? '').trim().toLowerCase();
+
+const normalizeCategory = (value: unknown) =>
+  normalizeText(value).replace(/\s+/g, ' ');
+
 export function OrganizationsPage() {
   const { organizations, contacts, addOrganization, updateOrganization, deleteOrganization, addContact, updateContact, deleteContact } = useData();
   const [searchTerm, setSearchTerm] = useState('');
@@ -53,49 +59,86 @@ export function OrganizationsPage() {
   });
 
   const availableCategories = useMemo(() => {
-  return Array.from(
-    new Set(
-      organizations
-        .map((org) => org.category?.trim())
-        .filter((category): category is string => Boolean(category))
-    )
-  ).sort((a, b) => a.localeCompare(b));
-}, [organizations]);
+    const categoryMap = new Map<string, string>();
 
+    organizations.forEach((org) => {
+      const rawCategory = org.category?.trim();
+
+      if (!rawCategory) {
+        return;
+      }
+
+      const normalized = normalizeCategory(rawCategory);
+
+      if (!categoryMap.has(normalized)) {
+        categoryMap.set(normalized, rawCategory);
+      }
+    });
+
+    return Array.from(categoryMap.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [organizations]);
+
+const getOrgContacts = (orgId: string) =>
+  contacts.filter((c) => c.organizationId === orgId);
 
 const filteredOrganizations = organizations
   .filter((org) => {
-    const query = searchTerm.trim().toLowerCase();
-    if (!query) return true;
+    const query = normalizeText(searchTerm);
 
-    return (
-      (org.name ?? '').toLowerCase().includes(query) ||
-      (org.email ?? '').toLowerCase().includes(query) ||
-      (org.category ?? '').toLowerCase().includes(query)
-    );
+    if (!query) {
+      return true;
+    }
+
+    const orgContacts = getOrgContacts(org.id);
+
+    const searchableText = [
+      org.name,
+      org.email,
+      org.website,
+      org.linkedinUrl,
+      org.countryRegion,
+      org.category,
+      org.status,
+      org.notes,
+      ...orgContacts.map((contact) => contact.name),
+      ...orgContacts.map((contact) => contact.email),
+      ...orgContacts.map((contact) => contact.rolePosition),
+      ...orgContacts.map((contact) => contact.notes),
+    ]
+      .map(normalizeText)
+      .join(' ');
+
+    return searchableText.includes(query);
   })
-  .filter((org) => categoryFilter === 'all' || org.category === categoryFilter)
+  .filter((org) => {
+    if (categoryFilter === 'all') {
+      return true;
+    }
+
+    return normalizeCategory(org.category) === categoryFilter;
+  })
   .sort((a, b) => {
-    //  not-working up
     if (showWebsiteStatus) {
       if (a.websiteStatus === 'not-working' && b.websiteStatus !== 'not-working') {
         return -1;
       }
+
       if (a.websiteStatus !== 'not-working' && b.websiteStatus === 'not-working') {
         return 1;
       }
     }
+
     return 0;
   });
 
-  const getOrgContacts = (orgId: string) => contacts.filter((c) => c.organizationId === orgId);
-
   const handleAddOrg = async () => {
     if (editingOrg) {
-      updateOrganization(editingOrg.id, orgForm);
+      await updateOrganization(editingOrg.id, orgForm);
       setEditingOrg(null);
     } else {
-      addOrganization(orgForm);
+      await addOrganization(orgForm);
     }
     setOrgForm({
       name: '',
@@ -129,10 +172,10 @@ const filteredOrganizations = organizations
 
   const handleAddContact = async () => {
     if (editingContact) {
-      updateContact(editingContact.id, contactForm);
+      await updateContact(editingContact.id, contactForm);
       setEditingContact(null);
     } else {
-      addContact(contactForm);
+      await addContact(contactForm);
     }
     setContactForm({
       organizationId: '',
@@ -226,9 +269,9 @@ const filteredOrganizations = organizations
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All Categories</SelectItem>
-              {availableCategories.map((category) => (
-                <SelectItem key={category} value={category}>
-                  {formatCategory(category)}
+             {availableCategories.map((category) => (
+                <SelectItem key={category.value} value={category.value}>
+                  {formatCategory(category.label)}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -332,16 +375,23 @@ const filteredOrganizations = organizations
                   <div className="space-y-2">
                     <Label>Category</Label>
                     <Select
-                      value={orgForm.category}
-                      onValueChange={(value: string) => setOrgForm({ ...orgForm, category: value as Organization['category'] })}
+                      value={normalizeCategory(orgForm.category)}
+                      onValueChange={(value: string) => {
+                        const selectedCategory = availableCategories.find((category) => category.value === value);
+
+                        setOrgForm({
+                          ...orgForm,
+                          category: selectedCategory?.label ?? value,
+                        });
+                      }}
                     >
                       <SelectTrigger>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
                         {availableCategories.map((category) => (
-                          <SelectItem key={category} value={category}>
-                            {formatCategory(category)}
+                          <SelectItem key={category.value} value={category.value}>
+                            {formatCategory(category.label)}
                           </SelectItem>
                         ))}
                       </SelectContent>
