@@ -32,19 +32,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 const reloadData = useCallback(async () => {
   try {
     const orgs = await orgApi.listOrganizations();
+
     setOrganizations(orgs);
-
-    const contactLists = await Promise.all(
-      orgs.map(async (org) => {
-        try {
-          return await contactApi.listContactsByOrganization(org.id);
-        } catch {
-          return [];
-        }
-      })
-    );
-
-    setContacts(contactLists.flat());
+    setContacts(orgs.flatMap((org) => org.contacts ?? []));
   } catch {
     setOrganizations([]);
     setContacts([]);

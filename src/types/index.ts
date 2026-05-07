@@ -14,6 +14,7 @@ export interface Organization {
   createdAt: string;
   updatedAt: string;
   etag?: string;
+  contacts?: Contact[];
 }
 
 export interface Contact {

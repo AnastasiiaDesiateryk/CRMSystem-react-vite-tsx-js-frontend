@@ -18,7 +18,7 @@ type ImportOrganizationsResponse = {
 const IMPORT_ENDPOINT = '/api/imports/organizations/excel';
 
 export function ImportExportPage() {
-  const { organizations, contacts } = useData();
+  const { organizations, contacts, reloadData } = useData();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isImporting, setIsImporting] = useState(false);
@@ -78,6 +78,28 @@ export function ImportExportPage() {
     }
   };
 
+  // helper for demo only purpose: check health of render
+  const sleep = (ms: number) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+  const waitForBackend = async () => {
+    const deadline = Date.now() + 90_000;
+
+    while (Date.now() < deadline) {
+      try {
+        await api.get('/actuator/health', {
+          timeout: 15_000,
+        });
+
+        return;
+      } catch {
+        await sleep(3_000);
+      }
+    }
+
+    throw new Error('Backend is still waking up. Please try again in a moment.');
+  };  
+
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
 
@@ -101,6 +123,8 @@ export function ImportExportPage() {
     try {
       setIsImporting(true);
 
+      await waitForBackend(); // for demo
+
       const { data } = await api.post<ImportOrganizationsResponse>(
         IMPORT_ENDPOINT,
         formData,
@@ -109,13 +133,15 @@ export function ImportExportPage() {
         }
       );
 
+      await reloadData();
+
       setLastImportResult(data);
 
       toast.success(
         `Import completed: ${data.organizationsCreated} created, ${data.organizationsUpdated} updated, ${data.contactsCreated} contacts created`
       );
     } catch (error) {
-      toast.error(toApiMessage(error));
+      toast.error(error instanceof Error ? error.message : toApiMessage(error));
       console.error('Import failed:', error);
     } finally {
       setIsImporting(false);
